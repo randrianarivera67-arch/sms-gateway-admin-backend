@@ -7,10 +7,10 @@ const Device  = require('../models/Device');
 // Reçoit SMS depuis APK Android
 router.post('/receive', apikey, async (req, res) => {
   try {
-    const { from, message, sim, simSlot, deviceId } = req.body;
+    const { from, message, sim, simSlot, deviceId, operator: opBody } = req.body;
     // Détection opérateur
-    let operator = 'Inconnu';
-    if (sim) {
+    let operator = opBody || 'Inconnu';
+    if (!opBody && sim) {
       const s = sim.toUpperCase();
       if (s.includes('ORANGE')) operator = 'Orange Money';
       else if (s.includes('YAS') || s.includes('TELMA') || s.includes('MVOLA')) operator = 'YAS (Telma)';
