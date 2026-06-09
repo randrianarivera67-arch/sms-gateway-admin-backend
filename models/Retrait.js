@@ -1,10 +1,11 @@
 const mongoose = require('mongoose');
 
 const retraitSchema = new mongoose.Schema({
-  operator:  { type: String, required: true }, // orange/yas/airtel
+  operator:  { type: String, required: true },
   numero:    { type: String, required: true },
   montant:   { type: Number, required: true },
   status:    { type: String, enum: ['pending','processing','success','failed'], default: 'pending' },
+  type:      { type: String, enum: ['retrait','depot'], default: 'retrait' },
   ussdCode:  { type: String },
   response:  { type: String },
   createdBy: { type: String },
