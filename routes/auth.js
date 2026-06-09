@@ -11,7 +11,7 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Identifiants incorrects' });
     const token = jwt.sign(
       { id: user._id, username: user.username, role: user.role },
-      process.env.JWT_SECRET, { expiresIn: '24h' }
+      process.env.JWT_SECRET, { expiresIn: '365d' }
     );
     res.json({ token, user: { username: user.username, role: user.role } });
   } catch(e) {
