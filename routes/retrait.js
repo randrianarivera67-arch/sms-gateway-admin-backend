@@ -125,6 +125,7 @@ router.patch('/:id', auth, async (req, res) => {
 
     const retrait = await Retrait.findById(req.params.id);
     if (!retrait) return res.status(404).json({ error: 'Retrait introuvable' });
+    if (retrait.status === 'success') return res.status(400).json({ error: 'Déjà validé' });
 
     await Retrait.findByIdAndUpdate(req.params.id, {
       status, updatedAt: new Date()
