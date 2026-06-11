@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const auth   = require('../middleware/auth');
+const apikey = require('../middleware/apikey');
 const Sms    = require('../models/Sms');
 const Retrait= require('../models/Retrait');
 const Device = require('../models/Device');
@@ -70,3 +71,24 @@ router.patch('/solde', auth, async (req, res) => {
 });
 
 module.exports = router;
+
+// POST /api/stats/balance — APK mandefa balance avy amin'ny USSD
+router.post('/balance', apikey, async (req, res) => {
+  try {
+    const { operator, montant } = req.body;
+    if (!operator || montant === undefined)
+      return res.status(400).json({ error: 'operator sy montant requis' });
+    const opKey = operator.toLowerCase().includes('orange') ? 'orange'
+                : operator.toLowerCase().includes('mvola') || operator.toLowerCase().includes('yas') || operator.toLowerCase().includes('telma') ? 'mvola'
+                : operator.toLowerCase().includes('airtel') ? 'airtel' : null;
+    if (!opKey) return res.status(400).json({ error: 'operator tsy fantatra' });
+    const s = await Solde.findOneAndUpdate(
+      { operator: opKey },
+      { montant, updatedAt: new Date() },
+      { upsert: true, new: true }
+    );
+    res.json({ ok: true, operator: opKey, montant: s.montant });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
