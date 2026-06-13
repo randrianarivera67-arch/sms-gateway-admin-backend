@@ -102,6 +102,7 @@ router.post('/balance', apikey, async (req, res) => {
                 : operator.toLowerCase().includes('mvola') || operator.toLowerCase().includes('yas') || operator.toLowerCase().includes('telma') ? 'mvola'
                 : operator.toLowerCase().includes('airtel') ? 'airtel' : null;
     if (!opKey) return res.status(400).json({ error: 'operator tsy fantatra' });
+
     const s = await Solde.findOneAndUpdate(
       { operator: opKey },
       { montant, updatedAt: new Date() },
