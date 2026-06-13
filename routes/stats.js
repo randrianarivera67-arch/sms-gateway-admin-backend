@@ -70,6 +70,16 @@ router.patch('/solde', auth, async (req, res) => {
   }
 });
 
+// DELETE /api/stats/reset — réinitialiser toutes les stats
+router.delete('/reset', auth, async (req, res) => {
+  try {
+    await require('../models/Sms').deleteMany({});
+    await require('../models/Retrait').deleteMany({});
+    await require('../models/Solde').updateMany({}, { montant: 0 });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;
 
 // POST /api/stats/balance — APK mandefa balance avy amin'ny USSD
