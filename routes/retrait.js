@@ -139,6 +139,10 @@ router.patch('/:id', auth, async (req, res) => {
       status, updatedAt: new Date()
     });
 
+    if (status === 'success') {
+      await updateSolde(retrait.operator, retrait.montant, retrait.type);
+    }
+
     res.json({ ok: true, status });
   } catch(e) {
     res.status(500).json({ error: e.message });
