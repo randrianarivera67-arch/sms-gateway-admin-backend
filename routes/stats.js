@@ -45,6 +45,16 @@ router.get('/dashboard', auth, async (req, res) => {
         online: (devNow - new Date(d.lastSeen).getTime()) < 120000
       })),
       byOperator,
+      week: await (async () => {
+        const days = [];
+        for(let i=6; i>=0; i--) {
+          const start = new Date(now); start.setDate(start.getDate()-i); start.setHours(0,0,0,0);
+          const end = new Date(start); end.setHours(23,59,59,999);
+          const count = await Sms.countDocuments({ receivedAt: { $gte: start, $lte: end } });
+          days.push(count);
+        }
+        return days;
+      })(),
       balances,
       soldeTotal: total
     });
