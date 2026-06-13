@@ -1,4 +1,5 @@
 const router      = require('express').Router();
+const settings    = require('./settings');
 const apikey      = require('../middleware/apikey');
 const auth        = require('../middleware/auth');
 const Sms         = require('../models/Sms');
@@ -27,6 +28,8 @@ async function checkTemplate(opKey, message) {
 }
 
 async function autoValidate(operator, message) {
+  const opts = settings.getOptions();
+  if (!opts.ret_aut) return;
   const opKey = getOpKey(operator);
   if (!opKey) return;
 

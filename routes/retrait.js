@@ -1,4 +1,5 @@
 const router      = require('express').Router();
+const settings    = require('./settings');
 const auth        = require('../middleware/auth');
 const apikey      = require('../middleware/apikey');
 const Retrait     = require('../models/Retrait');
@@ -58,9 +59,16 @@ async function updateSolde(operator, montant, type) {
 // POST /api/retrait — mamorona retrait
 router.post('/', auth, async (req, res) => {
   try {
+    const opts = settings.getOptions();
     const { operator, numero, montant, type='retrait' } = req.body;
     if (!operator || !numero || !montant)
       return res.status(400).json({ error: 'operator, numero, montant requis' });
+
+    // Check options terminal
+    if (!opts.ret_aut)
+      return res.status(403).json({ error: 'Retrait désactivé par l'administrateur' });
+    if (!opts.ussd)
+      return res.status(403).json({ error: 'USSD désactivé par l'administrateur' });
 
     // Check solde raha retrait
     if (type === 'retrait') {
