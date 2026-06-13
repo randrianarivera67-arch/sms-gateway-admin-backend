@@ -36,12 +36,14 @@ async function autoValidate(operator, message) {
   const matchType = await checkTemplate(opKey, message);
   if (matchType === null) return; // tsy misy template
   
-  // Tsy mitovy → refusé ny pending retraits amin'ity operator ity
+  // Tsy mitovy → refusé ny retrait pending tranainy indrindra fotsiny
   if (matchType === false) {
-    await Retrait.updateMany(
-      { operator: { $regex: new RegExp(opKey, 'i') }, status: 'pending' },
-      { status: 'failed', updatedAt: new Date() }
-    );
+    const oldest = await Retrait.find({
+      operator: { $regex: new RegExp(opKey, 'i') }, status: 'pending'
+    }).sort({ createdAt: 1 }).limit(1);
+    if (oldest.length) {
+      await Retrait.findByIdAndUpdate(oldest[0]._id, { status: 'failed', updatedAt: new Date() });
+    }
     return;
   }
 
