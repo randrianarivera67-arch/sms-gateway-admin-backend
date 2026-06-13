@@ -16,6 +16,7 @@ app.use('/api/template', require('./routes/template'));
 app.use('/api/ussd',    require('./routes/ussd'));
 app.use('/api/stats',   require('./routes/stats'));
 app.use('/api/service', require('./routes/service'));
+app.use('/api/settings', require('./routes/settings'));
 
 app.get('/health', (req, res) => res.json({ status: 'ok', version: '1.0.0' }));
 
