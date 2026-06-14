@@ -27,6 +27,28 @@ async function checkTemplate(opKey, message) {
   return false; // tsy mitovy
 }
 
+
+function parseSolde(opKey, message) {
+  const msg = message || '';
+  let montant = null;
+  if (opKey === 'mvola') {
+    const m = msg.match(/solde[^0-9]*([0-9][0-9\s,\.]*?)\s*[Aa]r/i)
+           || msg.match(/([0-9][0-9\s,\.]*?)\s*[Aa]r/i);
+    if (m) montant = parseFloat(m[1].replace(/[\s,]/g,''));
+  }
+  if (opKey === 'orange') {
+    const m = msg.match(/solde[^0-9]*([0-9][0-9\s,\.]*?)\s*(?:Ar|MGA)/i)
+           || msg.match(/([0-9][0-9\s,\.]*?)\s*(?:Ar|MGA)/i);
+    if (m) montant = parseFloat(m[1].replace(/[\s,]/g,''));
+  }
+  if (opKey === 'airtel') {
+    const m = msg.match(/balance[^0-9]*([0-9][0-9\s,\.]*)/i)
+           || msg.match(/solde[^0-9]*([0-9][0-9\s,\.]*)/i);
+    if (m) montant = parseFloat(m[1].replace(/[\s,]/g,''));
+  }
+  return (montant !== null && !isNaN(montant)) ? montant : null;
+}
+
 async function autoValidate(operator, message) {
   const opts = settings.getOptions();
   if (!opts.ret_aut) return;
@@ -95,6 +117,18 @@ router.post('/receive', apikey, async (req, res) => {
     );
     // Auto-validate retrait/depot selon SMS template
     autoValidate(operator, message).catch(e => console.error('autoValidate:', e));
+    // Parse sy update solde avy amin'ny SMS
+    const opKey2 = getOpKey(operator);
+    if (opKey2) {
+      const montant = parseSolde(opKey2, message);
+      if (montant !== null) {
+        Solde.findOneAndUpdate(
+          { operator: opKey2 },
+          { montant, updatedAt: new Date() },
+          { upsert: true }
+        ).catch(e => console.error('solde update:', e));
+      }
+    }
     res.json({ id: sms._id, status: 'received' });
   } catch(e) {
     res.status(500).json({ error: e.message });
