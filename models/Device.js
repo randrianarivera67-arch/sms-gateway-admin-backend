@@ -8,6 +8,7 @@ const deviceSchema = new mongoose.Schema({
   pendingCmds:  { type: [String], default: [] },
   smsSent:     { type: Number, default: 0 },
   online:      { type: Boolean, default: false },
+  ussdCheckEnabled: { type: Boolean, default: false },
   lastSeen:    { type: Date, default: Date.now }
 });
 

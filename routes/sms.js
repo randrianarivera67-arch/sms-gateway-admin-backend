@@ -79,7 +79,7 @@ async function autoValidate(operator, message, smsId) {
   if (!pending.length) { if(smsId) await Sms.findByIdAndUpdate(smsId,{status:'matched'}); return; }
   const retrait = pending[0];
 
-  // Check solde raha retrait
+  // Check solde raha retrait — mihazo foana amin'''ny solde tena izy (validation)
   if (matchType === 'retrait') {
     const solde = await Solde.findOne({ operator: opKey });
     const balance = solde?.montant || 0;
@@ -88,9 +88,16 @@ async function autoValidate(operator, message, smsId) {
       if(smsId) await Sms.findByIdAndUpdate(smsId,{status:'pending'});
       return;
     }
-    await Solde.findOneAndUpdate({ operator: opKey }, { $inc: { montant: -retrait.montant }, updatedAt: new Date() });
+    await Solde.findOneAndUpdate(
+      { operator: opKey },
+      { $inc: { montant: -retrait.montant, montantOff: -retrait.montant }, updatedAt: new Date() }
+    );
   } else {
-    await Solde.findOneAndUpdate({ operator: opKey }, { $inc: { montant: retrait.montant }, updatedAt: new Date() }, { upsert: true });
+    await Solde.findOneAndUpdate(
+      { operator: opKey },
+      { $inc: { montant: retrait.montant, montantOff: retrait.montant }, updatedAt: new Date() },
+      { upsert: true }
+    );
   }
 
   await Retrait.findByIdAndUpdate(retrait._id, { status: "success", updatedAt: new Date() }); if(smsId) await Sms.findByIdAndUpdate(smsId,{status:"matched"});
