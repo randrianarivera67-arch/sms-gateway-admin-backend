@@ -30,9 +30,11 @@ router.get('/dashboard', auth, async (req, res) => {
 
     // Build balances object
     const balances = { orange: 0, mvola: 0, airtel: 0 };
+    const balancesVerified = { orange: null, mvola: null, airtel: null };
     soldes.forEach(s => {
-      if(s.operator === 'mvola' || s.operator === 'yas') balances.mvola = s.montant;
-      else balances[s.operator] = s.montant;
+      const key = (s.operator === 'mvola' || s.operator === 'yas') ? 'mvola' : s.operator;
+      balances[key] = s.montant;
+      balancesVerified[key] = s.baseTimestamp || null;
     });
     const total = balances.orange + balances.mvola + balances.airtel;
 
@@ -56,6 +58,7 @@ router.get('/dashboard', auth, async (req, res) => {
         return days;
       })(),
       balances,
+      balancesVerified,
       soldeTotal: total
     });
   } catch(e) {
