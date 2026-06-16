@@ -37,11 +37,34 @@ function getOpKey(operator) {
 async function getUssdCode(operator, type, channel='gp') {
   const key = getOpKey(operator);
   if (!key) return null;
+<<<<<<< HEAD
   const config = await UssdConfig.findOne({ operator: key });
   if (config && config[channel] && config[channel][type]) {
     return config[channel][type];
   }
   return DEFAULTS[key]?.[channel]?.[type] || null;
+=======
+  const opts = require('./settings').getOptions();
+  let config = await UssdConfig.findOne({ operator: key });
+
+  let template = null;
+  if (config) {
+    if (type === 'depot') {
+      // TPE Depot ON => tpe_depot, sinon gp_depot, sinon legacy depot
+      template = (opts.tpe_depot && config.tpe_depot) ? config.tpe_depot
+               : (config.gp_depot || config.depot || DEFAULTS[key]?.depot || null);
+    } else {
+      // TPE Retrait ON => tpe_retrait, sinon gp_retrait, sinon legacy retrait
+      template = (opts.tpe_ret && config.tpe_retrait) ? config.tpe_retrait
+               : (config.gp_retrait || config.retrait || DEFAULTS[key]?.retrait || null);
+    }
+  } else {
+    template = DEFAULTS[key]?.[type] || null;
+  }
+
+  if (!template) return null;
+  return template.replace('{numero}', numero).replace('{montant}', montant);
+>>>>>>> 4a737b1 (feat: UssdConfig supports gp/tpe codes, buildUssd reads tpe_depot/tpe_ret options)
 }
 
 async function checkSmsMatch(operator, message) {

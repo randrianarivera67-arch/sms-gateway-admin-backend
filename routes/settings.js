@@ -2,13 +2,12 @@ const router   = require('express').Router();
 const auth     = require('../middleware/auth');
 const Settings = require('../models/Settings');
 
-const DEFAULTS = { tpe: true, tpe_ret: true, cash: false, ret_aut: true, ussd: true };
-const ALLOWED  = ['tpe','tpe_ret','cash','ret_aut','ussd'];
+// FIX: tpe_depot sy tpe_ret = false par défaut (Grand Public)
+const DEFAULTS = { tpe_depot: false, tpe_ret: false, cash: false, ret_aut: true, ussd: true };
+const ALLOWED  = ['tpe_depot','tpe_ret','cash','ret_aut','ussd'];
 
-// Options in-memory cache
 let options = { ...DEFAULTS };
 
-// Initialise depuis MongoDB au démarrage
 async function loadOptions() {
   try {
     const docs = await Settings.find({ key: { $in: ALLOWED } });
@@ -17,12 +16,10 @@ async function loadOptions() {
 }
 loadOptions();
 
-// GET
 router.get('/options', auth, (req, res) => {
   res.json(options);
 });
 
-// POST
 router.post('/options', auth, async (req, res) => {
   try {
     for (const key of ALLOWED) {
