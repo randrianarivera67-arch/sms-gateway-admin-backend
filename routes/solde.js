@@ -17,31 +17,44 @@ function getOpKey(operator) {
 function extractAmount(text) {
   if (!text) return null;
 
-  // Cherche un nombre avec espaces ou points comme séparateurs de milliers,
-  // suivi optionnellement d'une partie décimale après virgule ou point
-  // Pattern: groupes de 1-3 chiffres séparés par espace/point, puis decimal optionnel
+  // Cherche le montant avant "Ar" ou "ariary" en priorité
+  const arPattern = /(\d[\d\s.,]*)\s*(?:Ar|ariary)/gi;
+  const arMatches = [...text.matchAll(arPattern)];
+  if (arMatches.length > 0) {
+    for (const m of arMatches) {
+      let s = m[1].trim();
+      const commaIdx = s.indexOf(',');
+      let decimalPart = '';
+      if (commaIdx >= 0) {
+        decimalPart = s.substring(commaIdx + 1);
+        s = s.substring(0, commaIdx);
+      }
+      const intPart = s.replace(/[\s]/g, '').replace(/\./g, '');
+      const num = parseFloat(intPart + (decimalPart ? '.' + decimalPart : ''));
+      if (!isNaN(num) && num >= 0 && num < 1000000000) return Math.round(num);
+    }
+  }
+
+  // Fallback: premier nombre trouvé dans le texte
   const pattern = /\d{1,3}(?:[\s.]\d{3})*(?:,\d{1,2})?/g;
   const matches = text.match(pattern);
   if (!matches || !matches.length) return null;
 
   const amounts = matches.map(raw => {
     let s = raw.trim();
-    // Sépare partie décimale (après virgule) de la partie entière
     let decimalPart = '';
     const commaIdx = s.indexOf(',');
     if (commaIdx >= 0) {
       decimalPart = s.substring(commaIdx + 1);
       s = s.substring(0, commaIdx);
     }
-    // Retire tous les séparateurs de milliers (espace ou point)
     const intPart = s.replace(/[\s.]/g, '');
     const num = parseFloat(intPart + (decimalPart ? '.' + decimalPart : ''));
     return isNaN(num) ? null : num;
   }).filter(n => n !== null);
 
   if (!amounts.length) return null;
-  // Le solde est généralement le plus grand nombre trouvé dans le message
-  return Math.round(Math.max(...amounts));
+  return Math.round(amounts[0]); // Premier montant trouvé
 }
 
 // POST /api/solde/check-result — reçoit le résultat USSD réel depuis l'APK
