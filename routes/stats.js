@@ -28,11 +28,17 @@ router.get('/dashboard', auth, async (req, res) => {
       Solde.find()
     ]);
 
-    // Build balances object
+    // Détermine si la vérification USSD est active (au moins un device online avec le toggle ON)
+    const onlineDevices = devices.filter(d => (Date.now() - new Date(d.lastSeen).getTime()) < 120000);
+    const ussdCheckEnabled = onlineDevices.some(d => d.ussdCheckEnabled);
+
+    // Build balances object — mihazo montant (verified) raha ON, montantOff raha OFF
     const balances = { orange: 0, mvola: 0, airtel: 0 };
+    const balancesVerified = { orange: null, mvola: null, airtel: null };
     soldes.forEach(s => {
-      if(s.operator === 'mvola' || s.operator === 'yas') balances.mvola = s.montant;
-      else balances[s.operator] = s.montant;
+      const key = (s.operator === 'mvola' || s.operator === 'yas') ? 'mvola' : s.operator;
+      balances[key] = ussdCheckEnabled ? (s.montant || 0) : (s.montantOff || 0);
+      balancesVerified[key] = ussdCheckEnabled ? (s.baseTimestamp || null) : null;
     });
     const total = balances.orange + balances.mvola + balances.airtel;
 
@@ -56,6 +62,7 @@ router.get('/dashboard', auth, async (req, res) => {
         return days;
       })(),
       balances,
+      balancesVerified,
       soldeTotal: total
     });
   } catch(e) {
@@ -98,8 +105,6 @@ router.get('/solde-all', auth, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-module.exports = router;
-
 // POST /api/stats/balance — APK mandefa balance avy amin'ny USSD
 router.post('/balance', apikey, async (req, res) => {
   try {
@@ -121,3 +126,5 @@ router.post('/balance', apikey, async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+module.exports = router;

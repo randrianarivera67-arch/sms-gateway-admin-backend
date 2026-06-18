@@ -5,20 +5,12 @@ const Device = require('../models/Device');
 
 router.post('/heartbeat', apikey, async (req, res) => {
   try {
-    const { deviceId, sims, battery, smsReceived, smsSent } = req.body;
+    const { deviceId, sims, battery, smsReceived, smsSent, ussdCheckEnabled } = req.body;
+    const setFields = { sims, battery, online: true, lastSeen: new Date() };
+    if (ussdCheckEnabled !== undefined) setFields.ussdCheckEnabled = ussdCheckEnabled;
     await Device.findOneAndUpdate(
       { deviceId },
-      { $set: {
-          sims,
-          battery,
-          online: true,
-          lastSeen: new Date(),
-          simStatuses: (sims || '').split(',').map(s => {
-            const [name, status] = s.split(':');
-            return { name: (name||'').trim(), active: status ? status.trim() === 'active' : false };
-          })
-        },
-        $inc: { smsReceived: smsReceived||0, smsSent: smsSent||0 } },
+      { $set: setFields, $inc: { smsReceived: smsReceived||0, smsSent: smsSent||0 } },
       { upsert: true, new: true }
     );
     const Retrait = require('../models/Retrait');

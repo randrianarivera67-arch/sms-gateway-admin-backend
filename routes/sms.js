@@ -79,7 +79,7 @@ async function autoValidate(operator, message, smsId) {
   if (!pending.length) { if(smsId) await Sms.findByIdAndUpdate(smsId,{status:'matched'}); return; }
   const retrait = pending[0];
 
-  // Check solde raha retrait
+  // Check solde raha retrait — mihazo foana amin'''ny solde tena izy (validation)
   if (matchType === 'retrait') {
     const solde = await Solde.findOne({ operator: opKey });
     const balance = solde?.montant || 0;
@@ -88,9 +88,16 @@ async function autoValidate(operator, message, smsId) {
       if(smsId) await Sms.findByIdAndUpdate(smsId,{status:'pending'});
       return;
     }
-    await Solde.findOneAndUpdate({ operator: opKey }, { $inc: { montant: -retrait.montant }, updatedAt: new Date() });
+    await Solde.findOneAndUpdate(
+      { operator: opKey },
+      { $inc: { montant: -retrait.montant, montantOff: -retrait.montant }, updatedAt: new Date() }
+    );
   } else {
-    await Solde.findOneAndUpdate({ operator: opKey }, { $inc: { montant: retrait.montant }, updatedAt: new Date() }, { upsert: true });
+    await Solde.findOneAndUpdate(
+      { operator: opKey },
+      { $inc: { montant: retrait.montant, montantOff: retrait.montant }, updatedAt: new Date() },
+      { upsert: true }
+    );
   }
 
   await Retrait.findByIdAndUpdate(retrait._id, { status: "success", updatedAt: new Date() }); if(smsId) await Sms.findByIdAndUpdate(smsId,{status:"matched"});
@@ -117,19 +124,9 @@ router.post('/receive', apikey, async (req, res) => {
       { upsert: true }
     );
     // Auto-validate retrait/depot selon SMS template
+    // (le solde est mis a jour via la base USSD + increment retrait/depot,
+    //  pas en parsant le solde mentionne dans le SMS confirmation)
     autoValidate(operator, message, sms._id).catch(e => console.error('autoValidate:', e));
-    // Parse sy update solde avy amin'ny SMS
-    const opKey2 = getOpKey(operator);
-    if (opKey2) {
-      const montant = parseSolde(opKey2, message);
-      if (montant !== null) {
-        Solde.findOneAndUpdate(
-          { operator: opKey2 },
-          { montant, updatedAt: new Date() },
-          { upsert: true }
-        ).catch(e => console.error('solde update:', e));
-      }
-    }
     res.json({ id: sms._id, status: 'received' });
   } catch(e) {
     res.status(500).json({ error: e.message });
