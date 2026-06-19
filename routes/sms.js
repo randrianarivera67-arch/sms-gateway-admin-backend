@@ -79,6 +79,14 @@ async function autoValidate(operator, message, smsId) {
   if (!pending.length) { if(smsId) await Sms.findByIdAndUpdate(smsId,{status:'matched'}); return; }
   const retrait = pending[0];
 
+  // SPEC: valide UNIQUEMENT si le solde est vérifiable dans le SMS, sinon EN ATTENTE (validation manuelle)
+  const soldeSms = parseSolde(opKey, message);
+  if (soldeSms === null) {
+    await Retrait.findByIdAndUpdate(retrait._id, { status: 'processing', updatedAt: new Date() });
+    if (smsId) await Sms.findByIdAndUpdate(smsId, { status: 'pending' });
+    return; // → en attente : alerte admin, validation manuelle
+  }
+
   // Check solde raha retrait — mihazo foana amin'''ny solde tena izy (validation)
   if (matchType === 'retrait') {
     const solde = await Solde.findOne({ operator: opKey });
