@@ -28,6 +28,18 @@ async function checkTemplate(opKey, message) {
 }
 
 
+function parseMontant(opKey, message) {
+  // Maka ny MONTANT TRANSACTION (montant voalohany), TSY ny solde
+  const msg = (message || '');
+  // esorina aloha ny faritra "solde/balance ..." mba tsy ho azon'ny regex ny solde
+  const cut = msg.replace(/(nouveau\s+)?solde[^.]*\.?/ig,' ').replace(/balance[^.]*\.?/ig,' ');
+  let m = cut.match(/(?:ar|mga)\s*([0-9][0-9\s.,]*)/i)      // "Ar 11575 ENVOYE"
+        || cut.match(/([0-9][0-9\s.,]*?)\s*(?:ar|mga)/i);    // "21 250 Ar recu de"
+  if (!m) return null;
+  const val = parseFloat(m[1].replace(/[\s,]/g,''));
+  return (isNaN(val)) ? null : val;
+}
+
 function parseSolde(opKey, message) {
   const msg = message || '';
   let montant = null;
@@ -79,13 +91,22 @@ async function autoValidate(operator, message, smsId) {
   if (!pending.length) { if(smsId) await Sms.findByIdAndUpdate(smsId,{status:'matched'}); return; }
   const retrait = pending[0];
 
-  // SPEC: valide UNIQUEMENT si le solde est vérifiable dans le SMS, sinon EN ATTENTE (validation manuelle)
-  const soldeSms = parseSolde(opKey, message);
-  if (soldeSms === null) {
+  // SÉCURISÉ: montant_SMS DOIT = montant_ordre (aucun manque), ET le solde doit être vérifiable
+  const soldeSms   = parseSolde(opKey, message);
+  const montantSms = parseMontant(opKey, message);
+  // (1) montant ou solde introuvable → EN ATTENTE + alerte
+  if (montantSms === null || soldeSms === null) {
     await Retrait.findByIdAndUpdate(retrait._id, { status: 'processing', updatedAt: new Date() });
     if (smsId) await Sms.findByIdAndUpdate(smsId, { status: 'pending' });
-    return; // → en attente : alerte admin, validation manuelle
+    return;
   }
+  // (2) montant reçu < ordre (banga/manque) → REFUSÉ
+  if (Math.round(montantSms) !== Math.round(retrait.montant)) {
+    await Retrait.findByIdAndUpdate(retrait._id, { status: 'failed', updatedAt: new Date() });
+    if (smsId) await Sms.findByIdAndUpdate(smsId, { status: 'pending' });
+    return;
+  }
+  // (3) montant exact + solde vérifié → continue vers VALIDÉ
 
   // Check solde raha retrait — mihazo foana amin'''ny solde tena izy (validation)
   if (matchType === 'retrait') {
