@@ -8,6 +8,8 @@ const ussdConfigSchema = new mongoose.Schema({
   // TPE (si toggle ON)
   tpe_depot:   { type: String, default: '' },
   tpe_retrait: { type: String, default: '' },
+  numeroUssd:  { type: String, default: '' },   // code USSD haka ny numéro Gateway
+  gatewayNumero:{ type: String, default: '' },  // numéro Gateway (mandray vola) — detecté/manuel
   updatedBy:   { type: String },
   updatedAt:   { type: Date, default: Date.now }
 });

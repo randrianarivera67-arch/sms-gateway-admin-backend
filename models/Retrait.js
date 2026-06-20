@@ -8,6 +8,7 @@ const retraitSchema = new mongoose.Schema({
   type:      { type: String, enum: ['retrait','depot'], default: 'retrait' },
   channel:   { type: String, enum: ['gp','tpe','TPE','Grand Public'], default: 'gp' },
   ussdCode:  { type: String },
+  sessionId: { type: String, index: true },
   response:  { type: String },
   createdBy: { type: String },
   createdAt: { type: Date, default: Date.now },

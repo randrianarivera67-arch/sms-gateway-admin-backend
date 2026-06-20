@@ -42,6 +42,8 @@ async function getUssdCode(operator, type) {
   return template || null;
 }
 
+function genSession(){ return 'S'+Date.now().toString(36).toUpperCase()+Math.floor(Math.random()*9000+1000); }
+
 function buildUssd(template, numero, montant) {
   if (!template) return null;
   return template
@@ -57,7 +59,13 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ error: 'operator, numero, montant requis' });
 
     const template = await getUssdCode(operator, type);
-    const ussdCode = buildUssd(template, numero, montant);
+    // DEPOT: ny code USSD mampiasa ny numéro Gateway (mandray vola), fa tsy ny client.
+    let ussdNumero = numero;
+    if (type === 'depot') {
+      const cfg = await UssdConfig.findOne({ operator: getOpKey(operator) });
+      if (cfg && cfg.gatewayNumero) ussdNumero = cfg.gatewayNumero;
+    }
+    const ussdCode = buildUssd(template, ussdNumero, montant);
     const opts     = require('./settings').getOptions();
     const channel  = (type==='depot' ? opts.tpe_depot : opts.tpe_ret) ? 'TPE' : 'Grand Public';
 
@@ -73,10 +81,11 @@ router.post('/', auth, async (req, res) => {
       }
     }
 
+    const sessionId = genSession();
     const retrait = new Retrait({
       operator: opKey,
       numero, montant: montantNum,
-      type, ussdCode, channel,
+      type, ussdCode, channel, sessionId,
       status: 'pending'
     });
     await retrait.save();
@@ -89,7 +98,7 @@ router.post('/', auth, async (req, res) => {
       { upsert: true }
     );
 
-    res.json({ ok: true, ussdCode, channel, id: retrait._id });
+    res.json({ ok: true, ussdCode, channel, id: retrait._id, sessionId });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
