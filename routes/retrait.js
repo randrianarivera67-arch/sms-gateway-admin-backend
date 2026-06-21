@@ -54,7 +54,7 @@ function buildUssd(template, numero, montant) {
 // POST /api/retrait — créer un retrait
 router.post('/', auth, async (req, res) => {
   try {
-    const { operator, numero, montant, type='retrait' } = req.body;
+    const { operator, numero, montant, type='retrait', clientId='', provider='', providerId='' } = req.body;
     if (!operator||!numero||!montant)
       return res.status(400).json({ error: 'operator, numero, montant requis' });
 
@@ -86,6 +86,7 @@ router.post('/', auth, async (req, res) => {
       operator: opKey,
       numero, montant: montantNum,
       type, ussdCode, channel, sessionId,
+      clientId, provider, providerId,
       status: 'pending'
     });
     await retrait.save();
