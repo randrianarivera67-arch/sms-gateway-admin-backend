@@ -29,6 +29,18 @@ router.post('/check-result', apikey, async (req,res)=>{
   }catch(e){res.status(500).json({error:e.message});}
 });
 
+// POST /api/numero/set — APK mandefa numéro mivantana (apikey)
+router.post('/set', apikey, async (req,res)=>{
+  try{
+    const { operator, numero } = req.body;
+    const opKey=getOpKey(operator); if(!opKey) return res.status(400).json({error:'Opérateur non reconnu'});
+    const clean=(numero||'').replace(/[\s.\-]/g,'');
+    if(!/^0(?:32|33|34|37|38)\d{7}$/.test(clean)) return res.status(400).json({error:'Numéro invalide',numero:clean});
+    await UssdConfig.findOneAndUpdate({operator:opKey},{gatewayNumero:clean,updatedAt:new Date()},{upsert:true});
+    res.json({ok:true,operator:opKey,gatewayNumero:clean});
+  }catch(e){res.status(500).json({error:e.message});}
+});
+
 // POST /api/numero — admin manondro manuel { operator, numero, numeroUssd? } (auth)
 router.post('/', auth, async (req,res)=>{
   try{
