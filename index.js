@@ -21,7 +21,10 @@ app.use('/api/service', require('./routes/service'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/solde',   require('./routes/solde'));
 
-app.get('/health', (req, res) => res.json({ status: 'ok', version: '1.1.0' }));
+app.get('/health', (req, res) => res.json({ status: 'ok', version: '1.1.0', time: new Date().toISOString() }));
+
+// Keepalive endpoint pour UptimeRobot - leger, pas de DB query
+app.get('/keepalive', (req, res) => res.json({ alive: true, uptime: process.uptime() }));
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
