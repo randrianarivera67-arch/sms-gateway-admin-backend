@@ -87,7 +87,8 @@ router.post('/', auth, async (req, res) => {
       numero, montant: montantNum,
       type, ussdCode, channel, sessionId,
       clientId, provider, providerId,
-      status: 'pending'
+      status: 'pending',
+      expiresAt: new Date(Date.now() + 60*60*1000) // FIX: 1h limite de validite
     });
     await retrait.save();
 
@@ -189,3 +190,39 @@ router.post('/public/:id/processing', async (req, res) => {
 });
 
 module.exports = router;
+
+// POST /api/retrait/:id/valider — bouton VALIDÉ amin'ny admin panel
+router.post('/:id/valider', auth, async (req, res) => {
+  try {
+    if (!req.user || !['admin','superadmin'].includes(req.user.role))
+      return res.status(403).json({ error: 'Acces refuse: admin requis' });
+    const cur = await Retrait.findById(req.params.id);
+    if (!cur) return res.status(404).json({ error: 'Retrait non trouve' });
+    if (cur.status !== 'success') {
+      const opKey = (cur.operator||'').toLowerCase();
+      const delta = cur.type === 'depot' ? cur.montant : -cur.montant;
+      await Solde.findOneAndUpdate(
+        { operator: opKey },
+        { $inc: { montant: delta, montantOff: delta }, updatedAt: new Date() },
+        { upsert: true }
+      );
+    }
+    const r = await Retrait.findByIdAndUpdate(
+      req.params.id, { status: 'success', updatedAt: new Date() }, { returnDocument: 'after' }
+    );
+    res.json({ ok: true, retrait: r });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/retrait/:id/refuser — bouton REFUSÉ amin'ny admin panel
+router.post('/:id/refuser', auth, async (req, res) => {
+  try {
+    if (!req.user || !['admin','superadmin'].includes(req.user.role))
+      return res.status(403).json({ error: 'Acces refuse: admin requis' });
+    const r = await Retrait.findByIdAndUpdate(
+      req.params.id, { status: 'failed', updatedAt: new Date() }, { returnDocument: 'after' }
+    );
+    if (!r) return res.status(404).json({ error: 'Retrait non trouve' });
+    res.json({ ok: true, retrait: r });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});

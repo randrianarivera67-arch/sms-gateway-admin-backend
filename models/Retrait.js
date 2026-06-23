@@ -13,6 +13,9 @@ const retraitSchema = new mongoose.Schema({
   provider:   { type: String, default: '' },
   providerId: { type: String, default: '' },
   response:  { type: String },
+  // FIX: heure limite (createdAt + 1h) — raha tafahoatra io ary "processing"
+  // mbola, dia automatic "failed". Calculée a la creation.
+  expiresAt: { type: Date },
   createdBy: { type: String },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }

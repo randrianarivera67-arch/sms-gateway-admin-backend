@@ -16,105 +16,129 @@ function getOpKey(op) {
   return null;
 }
 
-async function checkTemplate(opKey, message) {
-  const templates = await SmsTemplate.find({ operator: opKey });
-  if (!templates.length) return null; // tsy misy template → tsy auto-validate
-  const msg = message.toLowerCase();
-  for (const t of templates) {
-    const allMatch = t.keywords.every(kw => msg.includes(kw.toLowerCase()));
-    if (allMatch) return t.type; // 'retrait' na 'depot'
-  }
-  return false; // tsy mitovy
+// Maka numero malgache ao anatin'ny SMS (0XX XXXXXXX)
+function extractNumeroFromSms(message) {
+  const m = (message||'').replace(/[\s.\-]/g,'').match(/(0(?:32|33|34|37|38)\d{7})/);
+  return m ? m[1] : null;
 }
 
+// Mizaha raha mitovy ny SMS amin'ny template ho an'ity operator ity.
+// Mamerina { type, template } raha mitovy, na null raha tsy misy template configured,
+// na false raha misy template configured fa tsy mitovy.
+async function checkTemplate(opKey, message) {
+  const templates = await SmsTemplate.find({ operator: opKey });
+  if (!templates.length) return null;
+  const msg = message.toLowerCase();
+  for (const t of templates) {
+    const allMatch = (t.keywords||[]).every(kw => msg.includes(kw.toLowerCase()));
+    if (allMatch) return { type: t.type, template: t };
+  }
+  return false;
+}
 
-function parseMontant(opKey, message) {
-  // Maka ny MONTANT TRANSACTION (montant voalohany), TSY ny solde
+// Maka ny MONTANT TRANSACTION (montant voalohany), TSY ny solde
+function parseMontant(message) {
   const msg = (message || '');
-  // esorina aloha ny faritra "solde/balance ..." mba tsy ho azon'ny regex ny solde
   const cut = msg.replace(/(nouveau\s+)?solde[^.]*\.?/ig,' ').replace(/balance[^.]*\.?/ig,' ');
-  let m = cut.match(/(?:ar|mga)\s*([0-9][0-9\s.,]*)/i)      // "Ar 11575 ENVOYE"
-        || cut.match(/([0-9][0-9\s.,]*?)\s*(?:ar|mga)/i);    // "21 250 Ar recu de"
+  let m = cut.match(/(?:ar|mga)\s*([0-9][0-9\s.,]*)/i)
+        || cut.match(/([0-9][0-9\s.,]*?)\s*(?:ar|mga)/i);
   if (!m) return null;
   const val = parseFloat(m[1].replace(/[\s,]/g,''));
   return (isNaN(val)) ? null : val;
 }
 
-function parseSolde(opKey, message) {
-  const msg = message || '';
-  let montant = null;
-  if (opKey === 'mvola') {
-    const m = msg.match(/solde[^0-9]*([0-9][0-9\s,\.]*?)\s*[Aa]r/i)
-           || msg.match(/([0-9][0-9\s,\.]*?)\s*[Aa]r/i);
-    if (m) montant = parseFloat(m[1].replace(/[\s,]/g,''));
+// Mitady Retrait pending/processing mifanaraka amin'ny NUMERO hita ao amin'ny SMS.
+// FIX: matching amin'ny numero client (araka ny exemple ao amin'ny template),
+// tsy "pending tranainy indrindra" fotsiny.
+async function findMatchingRetrait(opKey, type, message) {
+  const numero = extractNumeroFromSms(message);
+  const filter = { operator: opKey, status: { $in: ['pending','processing'] }, type };
+  if (numero) filter.numero = numero;
+
+  let candidates = await Retrait.find(filter).sort({ createdAt: 1 });
+
+  if (!candidates.length && numero) {
+    candidates = await Retrait.find({
+      operator: opKey, status: { $in: ['pending','processing'] }, type
+    }).sort({ createdAt: 1 });
   }
-  if (opKey === 'orange') {
-    const m = msg.match(/solde[^0-9]*([0-9][0-9\s,\.]*?)\s*(?:Ar|MGA)/i)
-           || msg.match(/([0-9][0-9\s,\.]*?)\s*(?:Ar|MGA)/i);
-    if (m) montant = parseFloat(m[1].replace(/[\s,]/g,''));
-  }
-  if (opKey === 'airtel') {
-    const m = msg.match(/balance[^0-9]*([0-9][0-9\s,\.]*)/i)
-           || msg.match(/solde[^0-9]*([0-9][0-9\s,\.]*)/i);
-    if (m) montant = parseFloat(m[1].replace(/[\s,]/g,''));
-  }
-  return (montant !== null && !isNaN(montant)) ? montant : null;
+  return candidates[0] || null;
 }
 
+// FIX: 1h timeout - raha tafahoatra 1h ny pending/processing -> failed
+async function expireOldRetraits(opKey) {
+  const oneHourAgo = new Date(Date.now() - 60*60*1000);
+  await Retrait.updateMany(
+    { operator: opKey, status: { $in: ['pending','processing'] }, createdAt: { $lt: oneHourAgo } },
+    { status: 'failed', updatedAt: new Date() }
+  );
+}
+
+// FLOW FENO:
+// 1. SMS tsy mitovy template configured -> ignore (pas de retrait touche)
+// 2. SMS mitovy template fa tsy misy retrait mifanaraka -> "matched"
+// 3. SMS mitovy template + misy retrait mifanaraka (numero):
+//    a. tafahoatra 1h -> deja "failed" (expireOldRetraits)
+//    b. montant != ordre -> "failed", admin garde valide/refuse manuel
+//    c. montant exact + solde ampy (retrait) -> "success" auto, solde miova
+//    d. montant exact fa solde tsy azo hamarinina -> "processing" (EN ATTENTE admin)
+// 4. SMS misy template fa TSY mitovy keywords -> "failed" avy hatrany,
+//    admin mahazo mbola valide/refuse manuel.
 async function autoValidate(operator, message, smsId) {
   const opts = settings.getOptions();
   if (!opts.ret_aut) return;
   const opKey = getOpKey(operator);
   if (!opKey) return;
 
-  const matchType = await checkTemplate(opKey, message);
-  if (matchType === null) { if(smsId) await Sms.findByIdAndUpdate(smsId,{status:"ignored"}); return; }
-  
-  // Tsy mitovy → refusé ny retrait pending tranainy indrindra fotsiny
-  if (matchType === false) { if(smsId) await Sms.findByIdAndUpdate(smsId,{status:"ignored"});
-    const oldest = await Retrait.find({
-      operator: { $regex: new RegExp(opKey, 'i') }, status: 'pending'
-    }).sort({ createdAt: 1 }).limit(1);
-    if (oldest.length) {
-      await Retrait.findByIdAndUpdate(oldest[0]._id, { status: 'failed', updatedAt: new Date() });
+  await expireOldRetraits(opKey);
+
+  const result = await checkTemplate(opKey, message);
+
+  if (result === null) {
+    if (smsId) await Sms.findByIdAndUpdate(smsId, { status: 'pending' });
+    return;
+  }
+
+  if (result === false) {
+    const retrait = await findMatchingRetrait(opKey, 'retrait', message)
+                 || await findMatchingRetrait(opKey, 'depot', message);
+    if (retrait) {
+      await Retrait.findByIdAndUpdate(retrait._id, { status: 'failed', updatedAt: new Date() });
+      if (smsId) await Sms.findByIdAndUpdate(smsId, { status: 'failed', retraitId: retrait._id });
+    } else {
+      if (smsId) await Sms.findByIdAndUpdate(smsId, { status: 'failed' });
     }
     return;
   }
 
-  // Mitovy → check solde sy validate
-  const pending = await Retrait.find({
-    operator: { $regex: new RegExp(opKey, 'i') },
-    status: 'pending',
-    type: matchType
-  }).sort({ createdAt: 1 }).limit(1);
+  const { type } = result;
+  const retrait = await findMatchingRetrait(opKey, type, message);
 
-  if (!pending.length) { if(smsId) await Sms.findByIdAndUpdate(smsId,{status:'matched'}); return; }
-  const retrait = pending[0];
-
-  // SÉCURISÉ: montant_SMS DOIT = montant_ordre (aucun manque), ET le solde doit être vérifiable
-  const soldeSms   = parseSolde(opKey, message);
-  const montantSms = parseMontant(opKey, message);
-  // (1) montant ou solde introuvable → EN ATTENTE + alerte
-  if (montantSms === null || soldeSms === null) {
-    await Retrait.findByIdAndUpdate(retrait._id, { status: 'processing', updatedAt: new Date() });
-    if (smsId) await Sms.findByIdAndUpdate(smsId, { status: 'pending' });
+  if (!retrait) {
+    if (smsId) await Sms.findByIdAndUpdate(smsId, { status: 'matched' });
     return;
   }
-  // (2) montant reçu < ordre (banga/manque) → REFUSÉ
+
+  const montantSms = parseMontant(message);
+
+  if (montantSms === null) {
+    await Retrait.findByIdAndUpdate(retrait._id, { status: 'processing', updatedAt: new Date() });
+    if (smsId) await Sms.findByIdAndUpdate(smsId, { status: 'processing', retraitId: retrait._id });
+    return;
+  }
+
   if (Math.round(montantSms) !== Math.round(retrait.montant)) {
     await Retrait.findByIdAndUpdate(retrait._id, { status: 'failed', updatedAt: new Date() });
-    if (smsId) await Sms.findByIdAndUpdate(smsId, { status: 'pending' });
+    if (smsId) await Sms.findByIdAndUpdate(smsId, { status: 'failed', retraitId: retrait._id });
     return;
   }
-  // (3) montant exact + solde vérifié → continue vers VALIDÉ
 
-  // Check solde raha retrait — mihazo foana amin'''ny solde tena izy (validation)
-  if (matchType === 'retrait') {
+  if (type === 'retrait') {
     const solde = await Solde.findOne({ operator: opKey });
     const balance = solde?.montant || 0;
     if (balance < retrait.montant) {
-      await Retrait.findByIdAndUpdate(retrait._id, { status: 'failed', updatedAt: new Date() });
-      if(smsId) await Sms.findByIdAndUpdate(smsId,{status:'pending'});
+      await Retrait.findByIdAndUpdate(retrait._id, { status: 'processing', updatedAt: new Date() });
+      if (smsId) await Sms.findByIdAndUpdate(smsId, { status: 'processing', retraitId: retrait._id });
       return;
     }
     await Solde.findOneAndUpdate(
@@ -129,14 +153,14 @@ async function autoValidate(operator, message, smsId) {
     );
   }
 
-  await Retrait.findByIdAndUpdate(retrait._id, { status: "success", updatedAt: new Date() }); if(smsId) await Sms.findByIdAndUpdate(smsId,{status:"matched"});
+  await Retrait.findByIdAndUpdate(retrait._id, { status: 'success', updatedAt: new Date() });
+  if (smsId) await Sms.findByIdAndUpdate(smsId, { status: 'matched', retraitId: retrait._id });
 }
 
-// Reçoit SMS depuis APK Android
+// Recoit SMS depuis APK Android
 router.post('/receive', apikey, async (req, res) => {
   try {
     const { from, message, sim, simSlot, deviceId, operator: opBody } = req.body;
-    // Détection opérateur
     let operator = opBody || 'Inconnu';
     if (!opBody && sim) {
       const s = sim.toUpperCase();
@@ -146,15 +170,13 @@ router.post('/receive', apikey, async (req, res) => {
     }
     const sms = new Sms({ from, message, sim, simSlot, operator, status: 'sent', deviceId });
     await sms.save();
-    // Update device stats
+
     await Device.findOneAndUpdate(
       { deviceId },
       { $inc: { smsReceived: 1 }, lastSeen: new Date(), online: true },
       { upsert: true }
     );
-    // Auto-validate retrait/depot selon SMS template
-    // (le solde est mis a jour via la base USSD + increment retrait/depot,
-    //  pas en parsant le solde mentionne dans le SMS confirmation)
+
     autoValidate(operator, message, sms._id).catch(e => console.error('autoValidate:', e));
     res.json({ id: sms._id, status: 'received' });
   } catch(e) {
@@ -173,14 +195,14 @@ router.get('/', auth, async (req, res) => {
     const sms   = await Sms.find(filter)
       .sort({ receivedAt: -1 })
       .skip((page-1)*limit)
-      .limit(Number(limit));
+      .limit(Number(limit))
+      .populate('retraitId');
     res.json({ total, page: Number(page), data: sms });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// DELETE /api/sms/clear — vider tout
 router.delete('/clear', auth, async (req, res) => {
   try {
     await Sms.deleteMany({});
@@ -188,7 +210,6 @@ router.delete('/clear', auth, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// DELETE /api/sms/:id — supprimer un SMS
 router.delete('/:id', auth, async (req, res) => {
   try {
     await Sms.findByIdAndDelete(req.params.id);
