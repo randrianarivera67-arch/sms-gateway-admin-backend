@@ -27,6 +27,7 @@ router.post('/register/options', auth, async (req, res) => {
       rpID,
       userID: new Uint8Array(Buffer.from(String(user._id))),
       userName: user.username,
+      userDisplayName: user.username,
       attestationType: 'none',
       excludeCredentials: (user.passkeys || []).map(p => ({
         id: p.credentialID,
