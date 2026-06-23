@@ -5,6 +5,15 @@ const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   role:     { type: String, enum: ['superadmin','admin','viewer'], default: 'admin' },
+  passkeys: [{
+    credentialID: { type: String },
+    publicKey:    { type: String },
+    counter:      { type: Number, default: 0 },
+    transports:   [String],
+    name:         { type: String, default: 'Passkey' },
+    createdAt:    { type: Date, default: Date.now }
+  }],
+  currentChallenge: { type: String, default: '' },
   createdAt:{ type: Date, default: Date.now }
 });
 

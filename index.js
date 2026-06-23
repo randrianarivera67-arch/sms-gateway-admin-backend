@@ -9,6 +9,7 @@ app.use(express.json());
 
 // Routes
 app.use('/api/auth',    require('./routes/auth'));
+app.use('/api/auth/passkey', require('./routes/passkey'));
 app.use('/api/sms',     require('./routes/sms'));
 app.use('/api/device',  require('./routes/device'));
 app.use('/api/retrait', require('./routes/retrait'));
