@@ -44,9 +44,10 @@ async function getUssdCode(operator, type) {
 
 function genSession(){ return 'S'+Date.now().toString(36).toUpperCase()+Math.floor(Math.random()*9000+1000); }
 
-function buildUssd(template, numero, montant) {
+function buildUssd(template, numero, montant, numeroGateway) {
   if (!template) return null;
   return template
+    .split('{numeroGateway}').join(numeroGateway || '')
     .split('{numero}').join(numero)
     .split('{montant}').join(montant)
     .split('{pin}').join('');
@@ -92,6 +93,13 @@ router.post('/', auth, async (req, res) => {
       expiresAt: new Date(Date.now() + 60*60*1000) // FIX: 1h limite de validite
     });
     await retrait.save();
+
+    // FIX: RETRAIT = serveur mandefa command USSD any amin'ny APK gateway
+    // (server-side automatique, tsy webview/client). DEPOT = client mandefa
+    // USSD ny tenany (numeroGateway efa hita ao amin'ny ussdCode).
+    if (type === 'retrait') {
+      dispatchUssdRetrait(retrait).catch(e => console.error('dispatchUssdRetrait:', e));
+    }
 
     res.json({ ok: true, ussdCode, channel, id: retrait._id, sessionId });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -188,6 +196,89 @@ router.post('/public/:id/processing', async (req, res) => {
     if (!r) return res.status(409).json({ error: 'Etat non modifiable' });
     res.json({ ok: true, status: r.status });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+
+// FIX: mitady appareil online izay manana SIM mifanaraka amin'ny operateur
+function operatorNameToKeyword(opKey) {
+  if (opKey === 'orange') return 'Orange';
+  if (opKey === 'mvola')  return 'MVola';
+  if (opKey === 'airtel') return 'Airtel';
+  return null;
+}
+
+async function dispatchUssdRetrait(retrait) {
+  try {
+    const opKey = getOpKey(retrait.operator) || retrait.operator;
+    const keyword = operatorNameToKeyword(opKey);
+    if (!keyword) return;
+
+    const config = await UssdConfig.findOne({ operator: opKey });
+    const opts   = require('./settings').getOptions();
+    const def    = DEFAULTS[opKey] || {};
+    const template = (opts.tpe_ret && (config?.tpe_retrait || def.tpe_retrait))
+      ? (config?.tpe_retrait || def.tpe_retrait)
+      : (config?.gp_retrait  || def.gp_retrait || '');
+    if (!template) return;
+
+    // numero CLIENT (mahazo vola) -- TSY numeroGateway, satria retrait = vola
+    // mankany amin'ny client
+    const ussdCode = buildUssd(template, retrait.numero, retrait.montant, config?.gatewayNumero);
+
+    // Mitady appareil ONLINE izay manana SIM mifanaraka (sims contient le keyword)
+    const Device = require('../models/Device');
+    const devices = await Device.find({
+      online: true,
+      sims: { $regex: keyword, $options: 'i' }
+    }).sort({ lastSeen: -1 });
+
+    if (!devices.length) {
+      console.error('dispatchUssdRetrait: aucun appareil online pour', opKey);
+      return;
+    }
+
+    // Mandefa amin'ny appareil VOALOHANY hita ihany (tsy ny rehetra, mba tsy
+    // hisy appareil roa samy manatanteraka ny code USSD mitovy)
+    const device = devices[0];
+    await Device.findByIdAndUpdate(device._id, {
+      $push: {
+        pendingCmds: {
+          type: 'ussd_retrait',
+          retraitId: String(retrait._id),
+          ussdCode,
+          operator: opKey
+        }
+      }
+    });
+  } catch(e) {
+    console.error('dispatchUssdRetrait error:', e.message);
+  }
+}
+
+
+// POST /api/retrait/:id/ussd-result -- APK mandefa ny vokatry ny USSD retrait
+// (apikey, tsy auth -- ny APK no miantso ity)
+router.post('/:id/ussd-result', apikey, async (req, res) => {
+  try {
+    const { success, response } = req.body;
+    const retrait = await Retrait.findById(req.params.id);
+    if (!retrait) return res.status(404).json({ error: 'Retrait non trouve' });
+
+    if (!success) {
+      await Retrait.findByIdAndUpdate(retrait._id, {
+        status: 'failed', response: response || 'USSD echec', updatedAt: new Date()
+      });
+      return res.json({ ok: true, status: 'failed' });
+    }
+
+    // USSD reussi -- response brut sauvegarde. Validation finale (montant/solde)
+    // se fait via le SMS de confirmation envoye par l'operateur (autoValidate
+    // dans routes/sms.js), pas ici directement.
+    await Retrait.findByIdAndUpdate(retrait._id, {
+      status: 'processing', response: response || '', updatedAt: new Date()
+    });
+    res.json({ ok: true, status: 'processing' });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 module.exports = router;

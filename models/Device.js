@@ -5,7 +5,7 @@ const deviceSchema = new mongoose.Schema({
   battery:     { type: Number, default: 0 },
   sims:        { type: String },
   smsReceived: { type: Number, default: 0 },
-  pendingCmds:  { type: [String], default: [] },
+  pendingCmds:  { type: mongoose.Schema.Types.Mixed, default: [] }, // String simple ou Object {type,retraitId,ussdCode,operator}
   smsSent:     { type: Number, default: 0 },
   online:      { type: Boolean, default: false },
   ussdCheckEnabled: { type: Boolean, default: false },
