@@ -69,7 +69,11 @@ router.post('/', auth, async (req, res) => {
     }
     const ussdCode = buildUssd(template, ussdNumero, montant);
     const opts     = require('./settings').getOptions();
-    const channel  = (type==='depot' ? opts.tpe_depot : opts.tpe_ret) ? 'TPE' : 'Grand Public';
+    // FIX: Airtel tsy misy TPE/GP -- channel = null (esorina ny badge)
+  const opKeyForChannel = getOpKey(operator);
+  const channel = opKeyForChannel === 'airtel'
+    ? null
+    : ((type==='depot' ? opts.tpe_depot : opts.tpe_ret) ? 'TPE' : 'Grand Public');
 
     const opKey = getOpKey(operator) || operator;
     const montantNum = Number(montant);
