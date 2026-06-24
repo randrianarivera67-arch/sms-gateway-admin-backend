@@ -179,7 +179,7 @@ router.delete('/:id', auth, async (req, res) => {
 router.get('/public/:id', async (req, res) => {
   try {
     const r = await Retrait.findById(req.params.id)
-      .select('type operator numero montant ussdCode channel status createdAt');
+      .select('type operator numero montant ussdCode channel status createdAt sessionId');
     if (!r) return res.status(404).json({ error: 'Commande non trouvee' });
     let gatewayNumero = '';
     try { const cfg = await UssdConfig.findOne({ operator: getOpKey(r.operator) }); if (cfg) gatewayNumero = cfg.gatewayNumero || ''; } catch(_){}
