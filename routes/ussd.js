@@ -21,7 +21,7 @@ router.get('/', auth, async (req, res) => {
 // POST — sauvegarde codes USSD
 router.post('/', auth, async (req, res) => {
   try {
-    const { operator, gp_depot, gp_retrait, tpe_depot, tpe_retrait } = req.body;
+    const { operator, gp_depot, gp_retrait, tpe_depot, tpe_retrait, gatewayNumero } = req.body;
     if (!operator) return res.status(400).json({ error: 'operator requis' });
 
     const update = { updatedBy: req.user?.username||'admin', updatedAt: new Date() };
@@ -29,6 +29,7 @@ router.post('/', auth, async (req, res) => {
     if (gp_retrait  !== undefined) update.gp_retrait  = gp_retrait;
     if (tpe_depot   !== undefined) update.tpe_depot   = tpe_depot;
     if (tpe_retrait !== undefined) update.tpe_retrait = tpe_retrait;
+    if (gatewayNumero !== undefined) update.gatewayNumero = gatewayNumero;
 
     const config = await UssdConfig.findOneAndUpdate(
       { operator }, update, { upsert: true, new: true }
@@ -76,7 +77,7 @@ router.post('/build', apikey, async (req, res) => {
       .replace('{numero}', numero)
       .replace('{montant}', montant);
 
-    res.json({ ok: true, ussdCode, channel: opts['tpe_'+type==='depot'?'depot':'ret'] ? 'TPE' : 'Grand Public' });
+    res.json({ ok: true, ussdCode, channel: opts[type==='depot'?'tpe_depot':'tpe_ret'] ? 'TPE' : 'Grand Public' });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
