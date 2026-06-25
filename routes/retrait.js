@@ -7,9 +7,9 @@ const Solde       = require('../models/Solde');
 const { getRates } = require('./rate');
 
 const DEFAULTS = {
-  orange: { gp_depot:'*111*2*{numero}*{montant}#', gp_retrait:'*111*1*{numero}*{montant}#', tpe_depot:'', tpe_retrait:'' },
-  mvola:  { gp_depot:'*155*2*{numero}*{montant}#', gp_retrait:'*155*1*{numero}*{montant}#', tpe_depot:'', tpe_retrait:'' },
-  airtel: { gp_depot:'*123*2*{numero}*{montant}#', gp_retrait:'*123*1*{numero}*{montant}#', tpe_depot:'', tpe_retrait:'' },
+  orange: { gp_depot:'', gp_retrait:'', tpe_depot:'', tpe_retrait:'' },
+  mvola:  { gp_depot:'', gp_retrait:'', tpe_depot:'', tpe_retrait:'' },
+  airtel: { gp_depot:'', gp_retrait:'', tpe_depot:'', tpe_retrait:'' },
 };
 
 function getOpKey(op) {
