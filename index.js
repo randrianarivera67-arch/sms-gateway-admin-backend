@@ -16,6 +16,7 @@ app.use('/api/retrait', require('./routes/retrait'));
 app.use('/api/numero', require('./routes/numero'));
 app.use('/api/template', require('./routes/template'));
 app.use('/api/ussd',    require('./routes/ussd'));
+app.use('/api/rate',    require('./routes/rate'));
 app.use('/api/stats',   require('./routes/stats'));
 app.use('/api/service', require('./routes/service'));
 app.use('/api/settings', require('./routes/settings'));
