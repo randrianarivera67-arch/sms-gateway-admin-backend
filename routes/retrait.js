@@ -4,6 +4,7 @@ const apikey      = require('../middleware/apikey');
 const Retrait     = require('../models/Retrait');
 const UssdConfig  = require('../models/UssdConfig');
 const Solde       = require('../models/Solde');
+const { getRates } = require('./rate');
 
 const DEFAULTS = {
   orange: { gp_depot:'*111*2*{numero}*{montant}#', gp_retrait:'*111*1*{numero}*{montant}#', tpe_depot:'', tpe_retrait:'' },
@@ -60,6 +61,16 @@ router.post('/', auth, async (req, res) => {
     if (!operator||!numero||!montant)
       return res.status(400).json({ error: 'operator, numero, montant requis' });
 
+    // === Conversion USD -> Ar (raha fournisseur Deriv) ===
+    let montantUsd = 0, rate = 0, devise = 'Ar';
+    let montantFinal = Number(montant);
+    if (provider && provider.toLowerCase() === 'deriv') {
+      const rates = await getRates();
+      rate = (type === 'depot') ? rates.rate_depot : rates.rate_retrait;
+      montantUsd = Number(montant);
+      montantFinal = Math.round(montantUsd * rate);
+      devise = 'USD';
+    }
     const template = await getUssdCode(operator, type);
     // DEPOT: ny code USSD mampiasa ny numéro Gateway (mandray vola), fa tsy ny client.
     let ussdNumero = numero;
@@ -67,7 +78,7 @@ router.post('/', auth, async (req, res) => {
       const cfg = await UssdConfig.findOne({ operator: getOpKey(operator) });
       if (cfg && cfg.gatewayNumero) ussdNumero = cfg.gatewayNumero;
     }
-    const ussdCode = buildUssd(template, ussdNumero, montant);
+    const ussdCode = buildUssd(template, ussdNumero, montantFinal);
     const opts     = require('./settings').getOptions();
     // FIX: Airtel tsy misy TPE/GP -- channel = null (esorina ny badge)
   const opKeyForChannel = getOpKey(operator);
@@ -76,7 +87,7 @@ router.post('/', auth, async (req, res) => {
     : ((type==='depot' ? opts.tpe_depot : opts.tpe_ret) ? 'TPE' : 'Grand Public');
 
     const opKey = getOpKey(operator) || operator;
-    const montantNum = Number(montant);
+    const montantNum = montantFinal;
 
     // Validation: mihazo montant (solde tena izy) FOANA na ON na OFF
     if (type === 'retrait') {
@@ -93,6 +104,7 @@ router.post('/', auth, async (req, res) => {
       numero, montant: montantNum,
       type, ussdCode, channel, sessionId,
       clientId, provider, providerId,
+      montantUsd, rate, devise,
       status: 'pending',
       expiresAt: new Date(Date.now() + 60*60*1000) // FIX: 1h limite de validite
     });
