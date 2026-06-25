@@ -103,7 +103,10 @@ async function autoValidate(operator, message, smsId) {
     const retrait = await findMatchingRetrait(opKey, 'retrait', message)
                  || await findMatchingRetrait(opKey, 'depot', message);
     if (retrait) {
-      await Retrait.findByIdAndUpdate(retrait._id, { status: 'failed', updatedAt: new Date() });
+      // FIX: receptionStatus = rejete (SMS niditra fa tsy mitovy template)
+      await Retrait.findByIdAndUpdate(retrait._id, {
+        status: 'failed', receptionStatus: 'rejete', lastUssdResponse: message, updatedAt: new Date()
+      });
       if (smsId) await Sms.findByIdAndUpdate(smsId, { status: 'failed', retraitId: retrait._id });
     } else {
       if (smsId) await Sms.findByIdAndUpdate(smsId, { status: 'failed' });
@@ -122,13 +125,19 @@ async function autoValidate(operator, message, smsId) {
   const montantSms = parseMontant(message);
 
   if (montantSms === null) {
-    await Retrait.findByIdAndUpdate(retrait._id, { status: 'processing', updatedAt: new Date() });
+    // FIX: receptionStatus = verification (SMS niditra fa mbola tsy voamarina)
+    await Retrait.findByIdAndUpdate(retrait._id, {
+      status: 'processing', receptionStatus: 'verification', lastUssdResponse: message, updatedAt: new Date()
+    });
     if (smsId) await Sms.findByIdAndUpdate(smsId, { status: 'processing', retraitId: retrait._id });
     return;
   }
 
   if (Math.round(montantSms) !== Math.round(retrait.montant)) {
-    await Retrait.findByIdAndUpdate(retrait._id, { status: 'failed', updatedAt: new Date() });
+    // FIX: receptionStatus = rejete (montant diso)
+    await Retrait.findByIdAndUpdate(retrait._id, {
+      status: 'failed', receptionStatus: 'rejete', lastUssdResponse: message, updatedAt: new Date()
+    });
     if (smsId) await Sms.findByIdAndUpdate(smsId, { status: 'failed', retraitId: retrait._id });
     return;
   }
@@ -137,7 +146,10 @@ async function autoValidate(operator, message, smsId) {
     const solde = await Solde.findOne({ operator: opKey });
     const balance = solde?.montant || 0;
     if (balance < retrait.montant) {
-      await Retrait.findByIdAndUpdate(retrait._id, { status: 'processing', updatedAt: new Date() });
+      // FIX: receptionStatus = verification (montant matched fa solde tsy ampy)
+      await Retrait.findByIdAndUpdate(retrait._id, {
+        status: 'processing', receptionStatus: 'verification', lastUssdResponse: message, updatedAt: new Date()
+      });
       if (smsId) await Sms.findByIdAndUpdate(smsId, { status: 'processing', retraitId: retrait._id });
       return;
     }
@@ -165,7 +177,10 @@ async function autoValidate(operator, message, smsId) {
     }
   }
 
-  await Retrait.findByIdAndUpdate(retrait._id, { status: 'success', updatedAt: new Date() });
+  // FIX: receptionStatus = confirme (montant matched + solde tena izy niova = OK)
+  await Retrait.findByIdAndUpdate(retrait._id, {
+    status: 'success', receptionStatus: 'confirme', lastUssdResponse: message, updatedAt: new Date()
+  });
   if (smsId) await Sms.findByIdAndUpdate(smsId, { status: 'matched', retraitId: retrait._id });
 }
 

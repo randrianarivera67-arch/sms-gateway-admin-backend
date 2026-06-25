@@ -271,9 +271,11 @@ router.post('/:id/ussd-result', apikey, async (req, res) => {
     const retrait = await Retrait.findById(req.params.id);
     if (!retrait) return res.status(404).json({ error: 'Retrait non trouve' });
 
+    // FIX: lastUssdResponse -- dernier message USSD voarakitra foana
     if (!success) {
       await Retrait.findByIdAndUpdate(retrait._id, {
-        status: 'failed', response: response || 'USSD echec', updatedAt: new Date()
+        status: 'failed', response: response || 'USSD echec',
+        lastUssdResponse: response || 'USSD echec', updatedAt: new Date()
       });
       return res.json({ ok: true, status: 'failed' });
     }
@@ -282,11 +284,72 @@ router.post('/:id/ussd-result', apikey, async (req, res) => {
     // se fait via le SMS de confirmation envoye par l'operateur (autoValidate
     // dans routes/sms.js), pas ici directement.
     await Retrait.findByIdAndUpdate(retrait._id, {
-      status: 'processing', response: response || '', updatedAt: new Date()
+      status: 'processing', response: response || '',
+      lastUssdResponse: response || '', updatedAt: new Date()
     });
     res.json({ ok: true, status: 'processing' });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
+
+
+// POST /api/retrait/:id/relancer -- bouton "Relancer" amin'ny admin panel
+// (manuel) -- mandefa indray ny command ussd_retrait amin'ny appareil mifanaraka
+router.post('/:id/relancer', auth, async (req, res) => {
+  try {
+    const retrait = await Retrait.findById(req.params.id);
+    if (!retrait) return res.status(404).json({ error: 'Retrait non trouve' });
+    if (retrait.type !== 'retrait')
+      return res.status(400).json({ error: 'Relance disponible uniquement pour les retraits' });
+
+    await Retrait.findByIdAndUpdate(retrait._id, {
+      $inc: { relanceCount: 1 },
+      lastRelanceAt: new Date(),
+      status: 'pending',
+      updatedAt: new Date()
+    });
+
+    const updated = await Retrait.findById(retrait._id);
+    dispatchUssdRetrait(updated).catch(e => console.error('relancer dispatchUssdRetrait:', e));
+
+    res.json({ ok: true, relanceCount: updated.relanceCount + 1 });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// FIX: relance automatique isaky 15 min raha mbola "failed" ny retrait
+// (mihaja hatrany mandra-pahomby na efa namarana ny admin manuel "refuser")
+async function autoRelanceFailedRetraits() {
+  try {
+    const fifteenMinAgo = new Date(Date.now() - 15*60*1000);
+    const candidates = await Retrait.find({
+      type: 'retrait',
+      status: 'failed',
+      $or: [
+        { lastRelanceAt: null },
+        { lastRelanceAt: { $lt: fifteenMinAgo } }
+      ],
+      // FIX: tsy relance raha efa expired (1h tafahoatra)
+      expiresAt: { $gt: new Date() }
+    });
+
+    for (const r of candidates) {
+      await Retrait.findByIdAndUpdate(r._id, {
+        $inc: { relanceCount: 1 },
+        lastRelanceAt: new Date(),
+        status: 'pending',
+        updatedAt: new Date()
+      });
+      const updated = await Retrait.findById(r._id);
+      dispatchUssdRetrait(updated).catch(e => console.error('autoRelance dispatchUssdRetrait:', e));
+    }
+    if (candidates.length) {
+      console.log('autoRelanceFailedRetraits: ' + candidates.length + ' retrait(s) relance(s)');
+    }
+  } catch(e) {
+    console.error('autoRelanceFailedRetraits error:', e.message);
+  }
+}
+// Cron interne -- check isaky 5 minitra (mizaha lastRelanceAt mihoatra 15 min)
+setInterval(autoRelanceFailedRetraits, 5*60*1000);
 
 module.exports = router;
 
