@@ -230,6 +230,42 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
+// FIX: GET /api/sms/depot -- SMS dia mifandray amin'ny Retrait type=depot ihany
+router.get('/depot', auth, async (req, res) => {
+  try {
+    const { page=1, limit=50, operator, status } = req.query;
+    const depotRetraits = await Retrait.find({ type: 'depot' }).distinct('_id');
+    const filter = { retraitId: { $in: depotRetraits } };
+    if (operator) filter.operator = operator;
+    if (status)   filter.status   = status;
+    const total = await Sms.countDocuments(filter);
+    const sms = await Sms.find(filter)
+      .sort({ receivedAt: -1 })
+      .skip((page-1)*limit)
+      .limit(Number(limit))
+      .populate('retraitId');
+    res.json({ total, page: Number(page), data: sms });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// FIX: GET /api/sms/retrait -- SMS dia mifandray amin'ny Retrait type=retrait ihany
+router.get('/retrait', auth, async (req, res) => {
+  try {
+    const { page=1, limit=50, operator, status } = req.query;
+    const retraitRetraits = await Retrait.find({ type: 'retrait' }).distinct('_id');
+    const filter = { retraitId: { $in: retraitRetraits } };
+    if (operator) filter.operator = operator;
+    if (status)   filter.status   = status;
+    const total = await Sms.countDocuments(filter);
+    const sms = await Sms.find(filter)
+      .sort({ receivedAt: -1 })
+      .skip((page-1)*limit)
+      .limit(Number(limit))
+      .populate('retraitId');
+    res.json({ total, page: Number(page), data: sms });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 router.delete('/clear', auth, async (req, res) => {
   try {
     await Sms.deleteMany({});

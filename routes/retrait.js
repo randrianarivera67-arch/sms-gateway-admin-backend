@@ -112,9 +112,11 @@ router.post('/', auth, async (req, res) => {
 // GET /api/retrait — liste retraits
 router.get('/', auth, async (req, res) => {
   try {
-    const { page=1, limit=50, status } = req.query;
+    const { page=1, limit=50, status, type, operator } = req.query;
     const filter = {};
-    if (status) filter.status = status;
+    if (status)   filter.status   = status;
+    if (type)     filter.type     = type;     // FIX: 'depot' ou 'retrait'
+    if (operator) filter.operator = operator;
     const total = await Retrait.countDocuments(filter);
     const data  = await Retrait.find(filter)
       .sort({ createdAt: -1 })
