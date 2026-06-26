@@ -4,6 +4,7 @@ const apikey      = require('../middleware/apikey');
 const Retrait     = require('../models/Retrait');
 const UssdConfig  = require('../models/UssdConfig');
 const Solde       = require('../models/Solde');
+const Sms         = require('../models/Sms');
 const { getRates } = require('./rate');
 
 const DEFAULTS = {
@@ -130,10 +131,16 @@ router.get('/', auth, async (req, res) => {
     if (type)     filter.type     = type;     // FIX: 'depot' ou 'retrait'
     if (operator) filter.operator = operator;
     const total = await Retrait.countDocuments(filter);
-    const data  = await Retrait.find(filter)
+    let data  = await Retrait.find(filter)
       .sort({ createdAt: -1 })
       .skip((page-1)*limit)
-      .limit(Number(limit));
+      .limit(Number(limit))
+      .lean();
+    const ids = data.map(d => d._id);
+    const smsList = await Sms.find({ retraitId: { $in: ids } }).select('retraitId message').lean();
+    const smsMap = {};
+    smsList.forEach(sm => { if (sm.retraitId) smsMap[String(sm.retraitId)] = sm.message; });
+    data = data.map(d => ({ ...d, smsTemplate: smsMap[String(d._id)] || '' }));
     res.json({ total, page: Number(page), data });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
