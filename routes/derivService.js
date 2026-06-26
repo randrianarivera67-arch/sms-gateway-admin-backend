@@ -1,51 +1,72 @@
-// Service Deriv Payment Agent API — manatanteraka ny transfert dériv
-// DEPOT: agent -> client (POST /payment-agents/v1/transfer)
-// RETRAIT: client withdraw -> agent (POST /payment-agents/v1/withdraw)
+// Service Deriv — WebSocket API (wss://ws.derivws.com/websockets/v3)
+const WebSocket = require('ws');
 const { getDerivConfig } = require('./deriv');
 
-const BASE_URL = 'https://api.derivws.com';
+const WS_URL = (appId) => 'wss://ws.derivws.com/websockets/v3?app_id=' + encodeURIComponent(appId);
+const TIMEOUT_MS = 15000;
 
-async function derivFetch(path, method, body, cfg) {
-  const url = BASE_URL + path;
-  const res = await fetch(url, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      'Deriv-App-ID': cfg.deriv_app_id,
-      'Authorization': 'Bearer ' + cfg.deriv_token
-    },
-    body: body ? JSON.stringify(body) : undefined
+function derivCall(cfg, request) {
+  return new Promise((resolve, reject) => {
+    if (!cfg.deriv_app_id || !cfg.deriv_token) {
+      return reject(new Error('Configuration API Deriv tsy feno (App ID / Token)'));
+    }
+    let done = false;
+    const ws = new WebSocket(WS_URL(cfg.deriv_app_id));
+    const finish = (err, data) => {
+      if (done) return;
+      done = true;
+      try { ws.close(); } catch(_) {}
+      err ? reject(err) : resolve(data);
+    };
+    const timer = setTimeout(() => finish(new Error('Deriv timeout')), TIMEOUT_MS);
+    ws.on('open', () => ws.send(JSON.stringify({ authorize: cfg.deriv_token })));
+    ws.on('message', (raw) => {
+      let msg;
+      try { msg = JSON.parse(raw.toString()); } catch(_) { return; }
+      if (msg.error) { clearTimeout(timer); return finish(new Error(msg.error.message || msg.error.code)); }
+      if (msg.msg_type === 'authorize') {
+        ws.send(JSON.stringify(request));
+      } else {
+        clearTimeout(timer); finish(null, msg);
+      }
+    });
+    ws.on('error', (e) => { clearTimeout(timer); finish(e); });
+    ws.on('close', () => { if (!done) { clearTimeout(timer); finish(new Error('Deriv connection fermee')); } });
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const errMsg = data?.errors?.[0]?.detail?.message || data?.errors?.[0]?.code || ('HTTP ' + res.status);
-    throw new Error(errMsg);
-  }
-  return data;
 }
 
-// DEPOT: rehefa client mandefa Mobile Money mankany amin'ny numero gateway
-// ary backend validé -- mandefa "deriv" (transfer) mankany amin'ny CR client.
-async function derivTransferToClient(crClient, montant) {
+async function derivTransferToClient(crClient, montantUsd) {
   const cfg = await getDerivConfig();
-  if (!cfg.deriv_app_id || !cfg.deriv_token) {
-    throw new Error('Configuration API Deriv tsy feno (App ID / Token)');
-  }
-  return derivFetch('/payment-agents/v1/transfer', 'POST', {
-    transfer_to: crClient,
-    amount: montant,
-    currency: 'USD' // FIXME: ovaina raha mila devise hafa
-  }, cfg);
+  const r = await derivCall(cfg, {
+    paymentagent_transfer: 1, transfer_to: crClient,
+    amount: Number(montantUsd), currency: 'USD'
+  });
+  return { ok: r.paymentagent_transfer === 1 || r.paymentagent_transfer === 2,
+           transaction_id: r.transaction_id || '', raw: r };
 }
 
-// RETRAIT: client mandefa "deriv" amin'ny CR agent (fixe). Backend mizaha
-// ny statut amin'ny request_id mba hahafantarana raha tonga ny vola.
-async function derivCheckWithdrawStatus(requestId) {
+async function derivCheckCredited(crClient, montantUsd, sinceEpoch) {
   const cfg = await getDerivConfig();
-  if (!cfg.deriv_app_id || !cfg.deriv_token) {
-    throw new Error('Configuration API Deriv tsy feno (App ID / Token)');
+  const r = await derivCall(cfg, { statement: 1, description: 1, limit: 50 });
+  const txs = r?.statement?.transactions || [];
+  const target = Math.round(Number(montantUsd) * 100) / 100;
+  for (const t of txs) {
+    const amt = Number(t.amount) || 0;
+    const when = Number(t.transaction_time) || 0;
+    const amountMatch = Math.abs(amt - target) < 0.001;
+    const timeOk = !sinceEpoch || when >= (sinceEpoch - 60);
+    const fromClient = !crClient || JSON.stringify(t).toLowerCase().includes(String(crClient).toLowerCase());
+    if (amt > 0 && amountMatch && timeOk && fromClient) {
+      return { credited: true, transaction_id: t.transaction_id || '', raw: t };
+    }
   }
-  return derivFetch('/payment-agents/v1/withdraw/' + requestId, 'GET', null, cfg);
+  return { credited: false };
 }
 
-module.exports = { derivTransferToClient, derivCheckWithdrawStatus, getDerivConfig };
+async function derivSendWithdrawOtp(email) {
+  const cfg = await getDerivConfig();
+  const r = await derivCall(cfg, { verify_email: email, type: 'paymentagent_withdraw' });
+  return { ok: r.verify_email === 1, raw: r };
+}
+
+module.exports = { derivTransferToClient, derivCheckCredited, derivSendWithdrawOtp, getDerivConfig };
