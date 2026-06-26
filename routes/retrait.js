@@ -362,8 +362,8 @@ async function autoRelanceFailedRetraits() {
     console.error('autoRelanceFailedRetraits error:', e.message);
   }
 }
-// Cron interne -- check isaky 5 minitra (mizaha lastRelanceAt mihoatra 15 min)
-setInterval(autoRelanceFailedRetraits, 5*60*1000);
+// DESACTIVE: relance manuel ihany (bouton "Relancer" admin), tsy automatique
+// setInterval(autoRelanceFailedRetraits, 5*60*1000);
 
 module.exports = router;
 
