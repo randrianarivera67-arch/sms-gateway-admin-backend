@@ -174,10 +174,10 @@ async function autoValidate(operator, message, smsId) {
   let depotStatus = 'processing';
   let derivErr = '';
   let providerId = '';
-  if (retrait.clientId) {
+  if (retrait.providerId) {
     try {
       const { derivTransferToClient } = require('./derivService');
-      const r = await derivTransferToClient(retrait.clientId, retrait.montant);
+      const r = await derivTransferToClient(retrait.providerId, retrait.montantUsd || retrait.montant);
       depotStatus = 'success';
       providerId = r?.transaction_id || r?.paymentagent_transfer?.transaction_id || r?.id || '';
     } catch(e) {
@@ -187,7 +187,7 @@ async function autoValidate(operator, message, smsId) {
     }
   } else {
     depotStatus = 'processing';
-    derivErr = 'clientId (CR Deriv) manquant';
+    derivErr = 'providerId (CR Deriv) manquant';
   }
 
   await Retrait.findByIdAndUpdate(retrait._id, {
@@ -301,7 +301,7 @@ async function autoRelanceDepotsDeriv() {
     const cutoff = new Date(Date.now() - DEPOT_DERIV_TIMEOUT_MS);
     const depots = await Retrait.find({
       type: 'depot', status: 'processing', receptionStatus: 'confirme',
-      clientId: { $nin: [null, ''] }
+      providerId: { $nin: [null, ''] }
     }).lean();
     for (const d of depots) {
       if (d.createdAt && new Date(d.createdAt) < cutoff) {
@@ -310,7 +310,7 @@ async function autoRelanceDepotsDeriv() {
       }
       try {
         const { derivTransferToClient } = require('./derivService');
-        const r = await derivTransferToClient(d.clientId, d.montant);
+        const r = await derivTransferToClient(d.providerId, d.montantUsd || d.montant);
         const providerId = r?.transaction_id || r?.paymentagent_transfer?.transaction_id || r?.id || '';
         await Retrait.findByIdAndUpdate(d._id, {
           status: 'success', providerId, response: '',
